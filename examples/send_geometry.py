@@ -1,4 +1,4 @@
-"""Example: send rhino3dm geometry to the Rhino Renderer plugin.
+"""Example: send rhino3dm geometry to the Geometry Renderer plugin.
 
 Run Rhino, load the C# plugin, then run:
 
@@ -8,36 +8,61 @@ Run Rhino, load the C# plugin, then run:
 from __future__ import annotations
 
 import math
+import struct
 import sys
 from pathlib import Path
 
 import rhino3dm
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
-from rhino_renderer_client import RhinoRendererClient  # noqa: E402
+from geometry_renderer_client import GeometryRendererClient  # noqa: E402
 
 
-def make_box_mesh(size: float = 10.0) -> rhino3dm.Mesh:
+def load_stl_mesh(path: Path) -> rhino3dm.Mesh:
+    data = path.read_bytes()
+    if len(data) >= 84:
+        triangle_count = struct.unpack_from("<I", data, 80)[0]
+        expected_size = 84 + triangle_count * 50
+        if expected_size == len(data):
+            return load_binary_stl_mesh(data, triangle_count)
+
+    return load_ascii_stl_mesh(data.decode("utf-8", errors="replace"))
+
+
+def load_binary_stl_mesh(data: bytes, triangle_count: int) -> rhino3dm.Mesh:
     mesh = rhino3dm.Mesh()
-    vertices = [
-        (0, 0, 0),
-        (size, 0, 0),
-        (size, size, 0),
-        (0, size, 0),
-        (0, 0, size),
-        (size, 0, size),
-        (size, size, size),
-        (0, size, size),
-    ]
-    for vertex in vertices:
-        mesh.Vertices.Add(*vertex)
+    offset = 84
+    for _ in range(triangle_count):
+        # normal: 3 floats, vertices: 9 floats, attribute byte count: uint16
+        values = struct.unpack_from("<12fH", data, offset)
+        vertex_values = values[3:12]
+        first_index = len(mesh.Vertices)
+        for index in range(0, 9, 3):
+            mesh.Vertices.Add(*vertex_values[index : index + 3])
+        mesh.Faces.AddFace(first_index, first_index + 1, first_index + 2)
+        offset += 50
 
-    mesh.Faces.AddFace(0, 1, 2, 3)
-    mesh.Faces.AddFace(4, 7, 6, 5)
-    mesh.Faces.AddFace(0, 4, 5, 1)
-    mesh.Faces.AddFace(1, 5, 6, 2)
-    mesh.Faces.AddFace(2, 6, 7, 3)
-    mesh.Faces.AddFace(3, 7, 4, 0)
+    mesh.Normals.ComputeNormals()
+    return mesh
+
+
+def load_ascii_stl_mesh(text: str) -> rhino3dm.Mesh:
+    mesh = rhino3dm.Mesh()
+    triangle_vertices: list[tuple[float, float, float]] = []
+    for line in text.splitlines():
+        parts = line.strip().split()
+        if len(parts) == 4 and parts[0].lower() == "vertex":
+            triangle_vertices.append((float(parts[1]), float(parts[2]), float(parts[3])))
+            if len(triangle_vertices) == 3:
+                first_index = len(mesh.Vertices)
+                for vertex in triangle_vertices:
+                    mesh.Vertices.Add(*vertex)
+                mesh.Faces.AddFace(first_index, first_index + 1, first_index + 2)
+                triangle_vertices.clear()
+
+    if len(mesh.Faces) == 0:
+        raise ValueError("No triangles found in STL file")
+
     mesh.Normals.ComputeNormals()
     return mesh
 
@@ -52,17 +77,21 @@ def make_spiral_curve() -> rhino3dm.PolylineCurve:
 
 
 def main() -> None:
-    client = RhinoRendererClient()
+    client = GeometryRendererClient()
     print("health:", client.health())
 
+    stl_path = Path(__file__).resolve().parents[1] / "test-mesh.stl"
+    test_mesh = load_stl_mesh(stl_path)
+    print(f"loaded {stl_path.name}: {len(test_mesh.Vertices)} vertices, {len(test_mesh.Faces)} faces")
+
     print(
-        "box:",
+        "mesh:",
         client.send_geometry(
-            make_box_mesh(),
-            object_id="sample-box",
+            test_mesh,
+            object_id="test-mesh",
             group_id="sample",
             color="#3b82f6",
-            opacity=0.55,
+            opacity=1,
             display="shaded",
             line_width=2,
             show_edges=True,
@@ -82,8 +111,8 @@ def main() -> None:
     )
 
     # These messages target previously sent geometry.
-    # client.hide(object_id="sample-box")
-    # client.show(object_id="sample-box")
+    # client.hide(object_id="test-mesh")
+    # client.show(object_id="test-mesh")
     # client.clear(group_id="sample")
 
 

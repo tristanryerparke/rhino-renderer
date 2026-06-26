@@ -2,20 +2,20 @@ using Eto.Drawing;
 using Eto.Forms;
 using Rhino;
 using Rhino.UI;
-using RhinoRendererPlugin.Display;
+using GeometryRendererPlugin.Display;
 
-namespace RhinoRendererPlugin.Panels;
+namespace GeometryRendererPlugin.Panels;
 
-[System.Runtime.InteropServices.Guid("2EA8C644-5C87-46FE-A094-E87C83454215")]
-public sealed class RhinoRendererPanel : Panel, IPanel
+[System.Runtime.InteropServices.Guid("373FED19-17D4-490F-AD70-985108C71E4F")]
+public sealed class GeometryRendererPanel : Panel, IPanel
 {
     private readonly uint _documentSerialNumber;
     private readonly Label _summaryLabel = new() { Text = "No objects", Wrap = WrapMode.Word };
 
-    public RhinoRendererPanel(uint documentSerialNumber)
+    public GeometryRendererPanel(uint documentSerialNumber)
     {
         _documentSerialNumber = documentSerialNumber;
-        Title = "Rhino Renderer";
+        Title = "Geometry Renderer";
         Content = BuildContent();
 
         var registry = Registry();
@@ -27,7 +27,7 @@ public sealed class RhinoRendererPanel : Panel, IPanel
         Load += (_, _) => RefreshSummary();
     }
 
-    public static Guid PanelId => typeof(RhinoRendererPanel).GUID;
+    public static Guid PanelId => typeof(GeometryRendererPanel).GUID;
 
     public string Title { get; }
 
@@ -75,19 +75,25 @@ public sealed class RhinoRendererPanel : Panel, IPanel
 
         var layout = new DynamicLayout
         {
-            Padding = 8,
-            DefaultSpacing = new Size(6, 6),
+            Padding = new Padding(4),
+            DefaultSpacing = new Size(4, 4),
         };
-        layout.AddRow(showAllButton, hideAllButton);
-        layout.AddRow(clearButton, refreshButton);
+        layout.AddRow(showAllButton);
+        layout.AddRow(hideAllButton);
+        layout.AddRow(clearButton);
+        layout.AddRow(refreshButton);
         layout.AddRow(_summaryLabel);
         layout.Add(null);
-        return layout;
+        return new Scrollable
+        {
+            Border = BorderType.None,
+            Content = layout,
+        };
     }
 
     private DisplayRegistry? Registry()
     {
-        return RhinoRendererPlugin.Instance?.GetRegistry(_documentSerialNumber);
+        return GeometryRendererPlugin.Instance?.GetRegistry(_documentSerialNumber);
     }
 
     private void OnRegistryChanged(object? sender, EventArgs e)
@@ -109,6 +115,8 @@ public sealed class RhinoRendererPanel : Panel, IPanel
             $"Objects: {snapshot.TotalCount}\n" +
             $"Visible: {snapshot.VisibleCount}\n" +
             $"Groups: {snapshot.GroupCount}\n\n" +
-            "Web API: http://127.0.0.1:17891";
+            "API:\n" +
+            "127.0.0.1\n" +
+            "port 17891";
     }
 }

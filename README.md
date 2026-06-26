@@ -1,4 +1,4 @@
-# rhino-renderer
+# geometry-renderer
 
 A Rhino 8 C# plugin that exposes a small localhost web API for rendering transient geometry in a custom display conduit.
 
@@ -33,7 +33,7 @@ Example response:
 ```json
 {
   "ok": true,
-  "plugin": "RhinoRendererPlugin",
+  "plugin": "GeometryRendererPlugin",
   "base_url": "http://127.0.0.1:17891",
   "active_document_serial": 1234
 }
@@ -85,12 +85,12 @@ Or use the client directly:
 
 ```python
 import rhino3dm
-from python.rhino_renderer_client import RhinoRendererClient
+from python.geometry_renderer_client import GeometryRendererClient
 
 mesh = rhino3dm.Mesh()
 # build mesh...
 
-client = RhinoRendererClient()
+client = GeometryRendererClient()
 print(client.health())
 client.send_geometry(
     mesh,
@@ -111,19 +111,19 @@ client.clear(group_id="demo")
 From the repo root:
 
 ```bash
-dotnet build csharp/RhinoRendererPlugin/RhinoRendererPlugin.csproj
+dotnet build csharp/GeometryRendererPlugin/GeometryRendererPlugin.csproj
 ```
 
 The plugin output is:
 
 ```text
-csharp/RhinoRendererPlugin/bin/Debug/net8.0/RhinoRendererPlugin.rhp
+csharp/GeometryRendererPlugin/bin/Debug/net8.0/GeometryRendererPlugin.rhp
 ```
 
 Load that `.rhp` in Rhino, then run the command:
 
 ```text
-RhinoRenderer
+GeometryRenderer
 ```
 
 The panel is optional; the web API starts when the plugin loads.

@@ -4,12 +4,16 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>RhinoRendererPlugin</AssemblyName>
-    <RootNamespace>RhinoRendererPlugin</RootNamespace>
+    <AssemblyName>GeometryRendererPlugin</AssemblyName>
+    <RootNamespace>GeometryRendererPlugin</RootNamespace>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <TargetExt>.rhp</TargetExt>
     <NoWarn>NU1701;CA1416</NoWarn>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Title>Geometry Renderer</Title>
+    <AssemblyTitle>Geometry Renderer</AssemblyTitle>
+    <Product>Geometry Renderer</Product>
+    <Company>tristanryerparke</Company>
+    <Description>Rhino display conduit renderer with localhost web API</Description>
   </PropertyGroup>
 
   <ItemGroup>

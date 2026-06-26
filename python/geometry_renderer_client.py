@@ -1,4 +1,4 @@
-"""Small Python client for the Rhino Renderer C# plugin.
+"""Small Python client for the Geometry Renderer C# plugin.
 
 The only required geometry convention is that Rhino geometry objects must expose
 rhino3dm's ``Encode()`` method, or you can pass an already-encoded dict.
@@ -12,11 +12,11 @@ import urllib.request
 from typing import Any
 
 
-class RhinoRendererError(RuntimeError):
+class GeometryRendererError(RuntimeError):
     pass
 
 
-class RhinoRendererClient:
+class GeometryRendererClient:
     def __init__(self, base_url: str = "http://127.0.0.1:17891", timeout: float = 10.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -95,13 +95,13 @@ class RhinoRendererClient:
                 body = response.read().decode("utf-8")
         except urllib.error.HTTPError as error:
             body = error.read().decode("utf-8", errors="replace")
-            raise RhinoRendererError(f"Rhino Renderer returned HTTP {error.code}: {body}") from error
+            raise GeometryRendererError(f"Geometry Renderer returned HTTP {error.code}: {body}") from error
         except urllib.error.URLError as error:
-            raise RhinoRendererError(f"Could not connect to Rhino Renderer at {self.base_url}: {error}") from error
+            raise GeometryRendererError(f"Could not connect to Geometry Renderer at {self.base_url}: {error}") from error
 
         result = json.loads(body) if body else {}
         if isinstance(result, dict) and result.get("ok") is False:
-            raise RhinoRendererError(str(result.get("error") or result))
+            raise GeometryRendererError(str(result.get("error") or result))
         return result
 
 
@@ -122,3 +122,4 @@ def strip_none(value: Any) -> Any:
     if isinstance(value, list):
         return [strip_none(item) for item in value]
     return value
+

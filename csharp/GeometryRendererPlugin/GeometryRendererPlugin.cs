@@ -1,39 +1,48 @@
 using Rhino;
 using Rhino.PlugIns;
 using Rhino.UI;
-using RhinoRendererPlugin.Display;
-using RhinoRendererPlugin.Panels;
-using RhinoRendererPlugin.Services;
+using GeometryRendererPlugin.Display;
+using GeometryRendererPlugin.Panels;
+using GeometryRendererPlugin.Services;
 
-namespace RhinoRendererPlugin;
+namespace GeometryRendererPlugin;
 
-[System.Runtime.InteropServices.Guid("1126EF13-CD7F-47EB-9186-8235DACE042E")]
-public sealed class RhinoRendererPlugin : PlugIn
+[System.Runtime.InteropServices.Guid("959C6565-9CA8-445C-A36A-CD9E44B715C6")]
+public sealed class GeometryRendererPlugin : PlugIn
 {
     private readonly Dictionary<uint, DisplayRegistry> _registries = new();
-    private RhinoRendererWebServer? _webServer;
+    private GeometryRendererWebServer? _webServer;
 
-    public RhinoRendererPlugin()
+    public GeometryRendererPlugin()
     {
         Instance = this;
     }
 
-    public static RhinoRendererPlugin? Instance { get; private set; }
+    public static GeometryRendererPlugin? Instance { get; private set; }
 
     protected override LoadReturnCode OnLoad(ref string errorMessage)
     {
         Rhino.UI.Panels.RegisterPanel(
             this,
-            typeof(RhinoRendererPanel),
-            "Rhino Renderer",
+            typeof(GeometryRendererPanel),
+            "Geometry Renderer",
             null,
             PanelType.PerDoc);
 
         RhinoDoc.CloseDocument += OnCloseDocument;
 
-        _webServer = new RhinoRendererWebServer(this);
-        _webServer.Start();
-        RhinoApp.WriteLine("[RhinoRenderer] Web API listening on http://127.0.0.1:17891");
+        try
+        {
+            _webServer = new GeometryRendererWebServer(this);
+            _webServer.Start();
+            RhinoApp.WriteLine("[GeometryRenderer] Web API listening on http://127.0.0.1:17891");
+        }
+        catch (Exception exception)
+        {
+            _webServer?.Dispose();
+            _webServer = null;
+            RhinoApp.WriteLine($"[GeometryRenderer] Web API failed to start: {exception.Message}");
+        }
 
         return LoadReturnCode.Success;
     }
@@ -83,7 +92,7 @@ public sealed class RhinoRendererPlugin : PlugIn
 
     public void OpenPanel()
     {
-        Rhino.UI.Panels.OpenPanel(RhinoRendererPanel.PanelId);
+        Rhino.UI.Panels.OpenPanel(GeometryRendererPanel.PanelId);
     }
 
     private void OnCloseDocument(object? sender, DocumentEventArgs e)

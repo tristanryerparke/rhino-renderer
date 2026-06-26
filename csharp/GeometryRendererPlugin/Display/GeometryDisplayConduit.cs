@@ -1,7 +1,7 @@
 using Rhino.Display;
 using Rhino.Geometry;
 
-namespace RhinoRendererPlugin.Display;
+namespace GeometryRendererPlugin.Display;
 
 public sealed class GeometryDisplayConduit : DisplayConduit
 {

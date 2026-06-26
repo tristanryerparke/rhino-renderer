@@ -1,6 +1,6 @@
 using System.Drawing;
 
-namespace RhinoRendererPlugin.Display;
+namespace GeometryRendererPlugin.Display;
 
 public enum MeshDisplayMode
 {

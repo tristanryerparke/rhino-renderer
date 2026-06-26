@@ -8,8 +8,8 @@ usage() {
   cat <<'EOF'
 Usage: scripts/install-rhino-plugin-mac.sh [options]
 
-Builds RhinoRendererPlugin and installs the full plugin output folder to Rhino's
-macOS MacPlugIns directory as RhinoRendererPlugin.rhp.
+Builds GeometryRendererPlugin and installs the full plugin output folder to Rhino's
+macOS MacPlugIns directory as GeometryRendererPlugin.rhp.
 
 Options:
   -c, --configuration <Debug|Release>  Build configuration. Default: Debug
@@ -50,12 +50,12 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PROJECT_PATH="$REPO_ROOT/csharp/RhinoRendererPlugin/RhinoRendererPlugin.csproj"
+PROJECT_PATH="$REPO_ROOT/csharp/GeometryRendererPlugin/GeometryRendererPlugin.csproj"
 TARGET_FRAMEWORK="net8.0"
-OUTPUT_DIR="$REPO_ROOT/csharp/RhinoRendererPlugin/bin/$CONFIGURATION/$TARGET_FRAMEWORK"
-PLUGIN_FILE="$OUTPUT_DIR/RhinoRendererPlugin.rhp"
+OUTPUT_DIR="$REPO_ROOT/csharp/GeometryRendererPlugin/bin/$CONFIGURATION/$TARGET_FRAMEWORK"
+PLUGIN_FILE="$OUTPUT_DIR/GeometryRendererPlugin.rhp"
 MAC_PLUGINS_DIR="${RHINO_MAC_PLUGINS_DIR:-$HOME/Library/Application Support/McNeel/Rhinoceros/MacPlugIns}"
-INSTALL_DIR="$MAC_PLUGINS_DIR/RhinoRendererPlugin.rhp"
+INSTALL_DIR="$MAC_PLUGINS_DIR/GeometryRendererPlugin.rhp"
 
 if [[ "$OSTYPE" != darwin* ]]; then
   echo "Warning: this installer targets Rhino for macOS, but OSTYPE=$OSTYPE" >&2
@@ -84,14 +84,14 @@ else
 fi
 
 cat <<EOF
-Installed Rhino Renderer plugin:
+Installed Geometry Renderer plugin:
   $INSTALL_DIR
 
 Plugin file:
-  $INSTALL_DIR/RhinoRendererPlugin.rhp
+  $INSTALL_DIR/GeometryRendererPlugin.rhp
 
 Next:
   1. Restart Rhino if it was already open.
-  2. In Rhino, run: RhinoRenderer
+  2. In Rhino, run: GeometryRenderer
   3. Check the web API: http://127.0.0.1:17891/health
 EOF

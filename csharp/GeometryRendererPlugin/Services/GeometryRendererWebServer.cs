@@ -4,20 +4,20 @@ using System.Text;
 using System.Text.Json;
 using Rhino;
 using Rhino.Geometry;
-using RhinoRendererPlugin.Display;
+using GeometryRendererPlugin.Display;
 
-namespace RhinoRendererPlugin.Services;
+namespace GeometryRendererPlugin.Services;
 
-public sealed class RhinoRendererWebServer : IDisposable
+public sealed class GeometryRendererWebServer : IDisposable
 {
     public const string DefaultBaseUrl = "http://127.0.0.1:17891/";
 
-    private readonly RhinoRendererPlugin _plugin;
+    private readonly GeometryRendererPlugin _plugin;
     private readonly HttpListener _listener = new();
     private readonly CancellationTokenSource _cancellation = new();
     private Task? _listenTask;
 
-    public RhinoRendererWebServer(RhinoRendererPlugin plugin)
+    public GeometryRendererWebServer(GeometryRendererPlugin plugin)
     {
         _plugin = plugin ?? throw new ArgumentNullException(nameof(plugin));
         _listener.Prefixes.Add(DefaultBaseUrl);
@@ -82,12 +82,13 @@ public sealed class RhinoRendererWebServer : IDisposable
             }
 
             var path = (context.Request.Url?.AbsolutePath ?? "/").Trim('/').ToLowerInvariant();
+            QueueLog($"HTTP {context.Request.HttpMethod} /{path} from {context.Request.RemoteEndPoint}");
             if (context.Request.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase) && path == "health")
             {
                 await WriteJsonAsync(context.Response, new Dictionary<string, object?>
                 {
                     ["ok"] = true,
-                    ["plugin"] = "RhinoRendererPlugin",
+                    ["plugin"] = "GeometryRendererPlugin",
                     ["base_url"] = DefaultBaseUrl.TrimEnd('/'),
                     ["active_document_serial"] = RhinoDoc.ActiveDoc?.RuntimeSerialNumber,
                 }).ConfigureAwait(false);
@@ -99,7 +100,9 @@ public sealed class RhinoRendererWebServer : IDisposable
                 var snapshot = await InvokeOnRhinoThreadAsync(() =>
                 {
                     var registry = _plugin.GetActiveRegistry();
-                    return registry?.Snapshot() ?? new DisplayRegistrySnapshot();
+                    var registrySnapshot = registry?.Snapshot() ?? new DisplayRegistrySnapshot();
+                    Log($"GET objects -> total={registrySnapshot.TotalCount} visible={registrySnapshot.VisibleCount} groups={registrySnapshot.GroupCount}");
+                    return registrySnapshot;
                 }).ConfigureAwait(false);
                 await WriteJsonAsync(context.Response, snapshot).ConfigureAwait(false);
                 return;
@@ -112,11 +115,13 @@ public sealed class RhinoRendererWebServer : IDisposable
             }
 
             var body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
+            QueueLog($"HTTP body bytes={Encoding.UTF8.GetByteCount(body)}");
             var result = await InvokeOnRhinoThreadAsync(() => HandlePost(path, body)).ConfigureAwait(false);
             await WriteJsonAsync(context.Response, result).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
+            QueueLog($"ERROR {context.Request.HttpMethod} {context.Request.Url?.AbsolutePath}: {exception.GetType().Name}: {exception.Message}");
             await WriteErrorAsync(context.Response, 500, exception.Message).ConfigureAwait(false);
         }
     }
@@ -136,6 +141,7 @@ public sealed class RhinoRendererWebServer : IDisposable
 
         action = NormalizeAction(action);
         var registry = _plugin.GetActiveRegistry() ?? throw new InvalidOperationException("No active Rhino document");
+        Log($"POST action={action} path=/{path} activeDoc={registry.Document.RuntimeSerialNumber}");
 
         switch (action)
         {
@@ -149,7 +155,13 @@ public sealed class RhinoRendererWebServer : IDisposable
                 var style = ParseStyle(TryGetProperty(root, "style"));
                 var geometryElement = TryGetProperty(root, "geometry") ?? root;
                 var geometry = DecodeGeometry(geometryElement, type);
+                Log(
+                    $"Geometry upsert object_id={objectId} group_id={groupId ?? "default"} visible={visible} " +
+                    $"type_hint={type ?? "(none)"} {DescribeGeometry(geometry)} " +
+                    $"style={DescribeStyle(style)}");
                 var record = registry.Upsert(objectId, geometry, style, groupId, visible);
+                var snapshot = registry.Snapshot();
+                Log($"Registry after upsert -> total={snapshot.TotalCount} visible={snapshot.VisibleCount} groups={snapshot.GroupCount} conduit_enabled={registry.Conduit.Enabled}");
                 _plugin.OpenPanel();
                 return Success(new Dictionary<string, object?>
                 {
@@ -168,6 +180,8 @@ public sealed class RhinoRendererWebServer : IDisposable
                 if (string.IsNullOrWhiteSpace(objectId))
                 {
                     var count = registry.SetAllVisible(visible, groupId);
+                    var allVisibleSnapshot = registry.Snapshot();
+                    Log($"{action} all group_id={groupId ?? "(all)"} changed={count} -> total={allVisibleSnapshot.TotalCount} visible={allVisibleSnapshot.VisibleCount}");
                     return Success(new Dictionary<string, object?>
                     {
                         ["action"] = action,
@@ -177,6 +191,8 @@ public sealed class RhinoRendererWebServer : IDisposable
                 }
 
                 var changed = registry.SetVisible(objectId, visible, groupId);
+                var setVisibleSnapshot = registry.Snapshot();
+                Log($"{action} object_id={objectId} group_id={groupId ?? "(any)"} changed={changed} -> total={setVisibleSnapshot.TotalCount} visible={setVisibleSnapshot.VisibleCount}");
                 return Success(new Dictionary<string, object?>
                 {
                     ["action"] = action,
@@ -192,16 +208,22 @@ public sealed class RhinoRendererWebServer : IDisposable
                 if (string.IsNullOrWhiteSpace(objectId))
                 {
                     var count = registry.DeleteAll(groupId);
+                    var deleteAllSnapshot = registry.Snapshot();
+                    Log($"delete all group_id={groupId ?? "(all)"} deleted={count} -> total={deleteAllSnapshot.TotalCount} visible={deleteAllSnapshot.VisibleCount}");
                     return Success(new Dictionary<string, object?> { ["action"] = "clear", ["count"] = count, ["group_id"] = groupId });
                 }
 
                 var deleted = registry.Delete(objectId, groupId);
+                var deleteSnapshot = registry.Snapshot();
+                Log($"delete object_id={objectId} group_id={groupId ?? "(any)"} deleted={deleted} -> total={deleteSnapshot.TotalCount} visible={deleteSnapshot.VisibleCount}");
                 return Success(new Dictionary<string, object?> { ["action"] = "delete", ["object_id"] = objectId, ["deleted"] = deleted });
             }
             case "clear":
             {
                 var groupId = GetString(root, "group_id") ?? GetString(root, "groupId");
                 var count = registry.DeleteAll(groupId);
+                var clearSnapshot = registry.Snapshot();
+                Log($"clear group_id={groupId ?? "(all)"} deleted={count} -> total={clearSnapshot.TotalCount} visible={clearSnapshot.VisibleCount}");
                 return Success(new Dictionary<string, object?> { ["action"] = "clear", ["count"] = count, ["group_id"] = groupId });
             }
             default:
@@ -236,6 +258,69 @@ public sealed class RhinoRendererWebServer : IDisposable
             "delete_all" => "clear",
             _ => normalized,
         };
+    }
+
+    private static void Log(string message)
+    {
+        RhinoApp.WriteLine("[GeometryRenderer:debug] " + message);
+    }
+
+    private static void QueueLog(string message)
+    {
+        try
+        {
+            RhinoApp.InvokeOnUiThread((Action)(() => Log(message)));
+        }
+        catch
+        {
+            // Logging must never affect API behavior.
+        }
+    }
+
+    private static string DescribeStyle(DisplayObjectStyle style)
+    {
+        return $"color=rgba({style.Color.R},{style.Color.G},{style.Color.B},{style.Color.A}) " +
+               $"line_width={style.LineWidth} mesh_display={style.MeshDisplay} " +
+               $"show_edges={style.ShowEdges} naked_edges={style.IncludeNakedEdges} " +
+               $"vertex_colors={style.UseVertexColors}";
+    }
+
+    private static string DescribeGeometry(object geometry)
+    {
+        return geometry switch
+        {
+            Mesh mesh => $"geometry=Mesh vertices={mesh.Vertices.Count} faces={mesh.Faces.Count} normals={mesh.Normals.Count} valid={mesh.IsValid} bbox={DescribeBoundingBox(mesh.GetBoundingBox(true))}",
+            Curve curve => $"geometry={curve.GetType().Name} closed={curve.IsClosed} length={SafeCurveLength(curve):0.###} valid={curve.IsValid} bbox={DescribeBoundingBox(curve.GetBoundingBox(true))}",
+            Brep brep => $"geometry=Brep faces={brep.Faces.Count} edges={brep.Edges.Count} vertices={brep.Vertices.Count} valid={brep.IsValid} bbox={DescribeBoundingBox(brep.GetBoundingBox(true))}",
+            Rhino.Geometry.Point point => $"geometry=Point location={DescribePoint(point.Location)} valid={point.IsValid}",
+            Point3d point => $"geometry=Point3d location={DescribePoint(point)} valid={point.IsValid}",
+            GeometryBase geometryBase => $"geometry={geometryBase.GetType().Name} object_type={geometryBase.ObjectType} valid={geometryBase.IsValid} bbox={DescribeBoundingBox(geometryBase.GetBoundingBox(true))}",
+            _ => $"geometry={geometry.GetType().FullName}",
+        };
+    }
+
+    private static double SafeCurveLength(Curve curve)
+    {
+        try
+        {
+            return curve.GetLength();
+        }
+        catch
+        {
+            return 0.0;
+        }
+    }
+
+    private static string DescribeBoundingBox(BoundingBox boundingBox)
+    {
+        return boundingBox.IsValid
+            ? $"min={DescribePoint(boundingBox.Min)} max={DescribePoint(boundingBox.Max)}"
+            : "invalid";
+    }
+
+    private static string DescribePoint(Point3d point)
+    {
+        return $"({point.X:0.###},{point.Y:0.###},{point.Z:0.###})";
     }
 
     private static object DecodeGeometry(JsonElement geometryElement, string? geometryType)

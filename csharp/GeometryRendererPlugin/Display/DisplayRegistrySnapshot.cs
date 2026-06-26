@@ -1,4 +1,4 @@
-namespace RhinoRendererPlugin.Display;
+namespace GeometryRendererPlugin.Display;
 
 public sealed class DisplayRegistrySnapshot
 {
