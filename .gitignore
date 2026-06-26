@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.pytest_cache/
+
+# Rhino
+*.rhl
