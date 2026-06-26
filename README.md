@@ -2,7 +2,7 @@
 
 A Rhino 8 C# plugin that exposes a small localhost web API for rendering transient geometry in a custom display conduit.
 
-External Python code can send Rhino geometry serialized by `rhino3dm.Encode()`, set color/opacity/style options, and later hide, show, delete, or clear that geometry without adding permanent objects to the Rhino document.
+External Python code can send Rhino geometry serialized by `rhino3dm.Encode()`, set geometry-specific display options, and later hide, show, delete, or clear that geometry without adding permanent objects to the Rhino document.
 
 ## Features
 
@@ -50,18 +50,27 @@ Content-Type: application/json
 {
   "object_id": "toolpath-1",
   "group_id": "job-1",
+  "geometry_type": "mesh",
   "geometry": { "...": "rhino3dm Encode() payload" },
-  "style": {
-    "color": "#3b82f6",
+  "color": "#3b82f6",
+  "mesh_settings": {
     "opacity": 0.65,
-    "line_width": 2,
     "display": "shaded",
-    "show_edges": true
+    "edge_width": 2,
+    "show_edges": false,
+    "sharp_edge_angle_degrees": 15,
+    "include_naked_edges": true
   }
 }
 ```
 
 Supported geometry is whatever RhinoCommon can decode from the `rhino3dm` JSON payload via `Rhino.Runtime.CommonObject.FromJSON()`, including meshes, curves, breps, and points.
+
+`color` is common to every geometry type. Other settings are geometry-specific:
+
+- Mesh/Brep: `mesh_settings` with `opacity`, `display`, `edge_width`, `show_edges` (default `false`), `sharp_edge_angle_degrees`, `include_naked_edges`
+- Curve: `curve_settings` with `line_width`
+- Point: `point_settings` with `point_size`
 
 ### Visibility and cleanup
 
@@ -96,10 +105,12 @@ client.send_geometry(
     mesh,
     object_id="mesh-1",
     group_id="demo",
+    geometry_type="mesh",
     color="#22c55e",
-    opacity=0.5,
-    display="shaded",
-    show_edges=True,
+    mesh_settings={
+        "opacity": 0.5,
+        "display": "shaded",
+    },
 )
 client.hide(object_id="mesh-1")
 client.show(object_id="mesh-1")

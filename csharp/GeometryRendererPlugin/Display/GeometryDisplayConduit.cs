@@ -1,3 +1,4 @@
+using Rhino;
 using Rhino.Display;
 using Rhino.Geometry;
 
@@ -9,6 +10,8 @@ public sealed class GeometryDisplayConduit : DisplayConduit
     private const double BoundingBoxMinPadding = 2.0;
     private readonly DisplayRegistry _registry;
     private readonly Dictionary<string, Mesh[]> _brepMeshCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Mesh> _shadedMeshCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<Line>> _sharpEdgeCache = new(StringComparer.Ordinal);
 
     public GeometryDisplayConduit(DisplayRegistry registry)
     {
@@ -53,6 +56,8 @@ public sealed class GeometryDisplayConduit : DisplayConduit
     public void ClearCaches()
     {
         _brepMeshCache.Clear();
+        _shadedMeshCache.Clear();
+        _sharpEdgeCache.Clear();
     }
 
     private void DrawGeometry(DrawEventArgs e, object geometry, DisplayObjectStyle style, string cacheKey)
@@ -60,27 +65,29 @@ public sealed class GeometryDisplayConduit : DisplayConduit
         switch (geometry)
         {
             case Point3d point:
-                e.Display.DrawPoint(point, PointStyle.RoundSimple, Math.Max(2, style.LineWidth + 2), style.Color);
+                e.Display.DrawPoint(point, PointStyle.RoundSimple, Math.Max(1, style.PointSize), style.Color);
                 return;
             case Rhino.Geometry.Point pointGeometry:
-                e.Display.DrawPoint(pointGeometry.Location, PointStyle.RoundSimple, Math.Max(2, style.LineWidth + 2), style.Color);
+                e.Display.DrawPoint(pointGeometry.Location, PointStyle.RoundSimple, Math.Max(1, style.PointSize), style.Color);
                 return;
             case Curve curve:
                 e.Display.DrawCurve(curve, style.Color, Math.Max(1, style.LineWidth));
                 return;
             case Mesh mesh:
-                DrawMesh(e, mesh, style);
+                DrawMesh(e, mesh, style, cacheKey);
                 return;
             case Brep brep:
+                var index = 0;
                 foreach (var brepMesh in GetBrepMeshes(cacheKey, brep))
                 {
-                    DrawMesh(e, brepMesh, style);
+                    DrawMesh(e, brepMesh, style, cacheKey + ":brep-part:" + index);
+                    index += 1;
                 }
                 return;
         }
     }
 
-    private void DrawMesh(DrawEventArgs e, Mesh mesh, DisplayObjectStyle style)
+    private void DrawMesh(DrawEventArgs e, Mesh mesh, DisplayObjectStyle style, string cacheKey)
     {
         if (style.MeshDisplay == MeshDisplayMode.Wireframe)
         {
@@ -97,11 +104,16 @@ public sealed class GeometryDisplayConduit : DisplayConduit
             Diffuse = style.Color,
             Transparency = style.Transparency,
         };
-        e.Display.DrawMeshShaded(mesh, material);
+        var shadedMesh = GetCachedShadedMesh(cacheKey, mesh, style.SharpEdgeAngleDegrees);
+        e.Display.DrawMeshShaded(shadedMesh, material);
 
         if (style.ShowEdges)
         {
-            e.Display.DrawMeshWires(mesh, style.EdgeColor, Math.Max(1, style.LineWidth));
+            var lines = GetCachedSharpEdges(cacheKey, mesh, style.SharpEdgeAngleDegrees, style.IncludeNakedEdges);
+            if (lines.Count > 0)
+            {
+                e.Display.DrawLines(lines, style.EdgeColor, Math.Max(1, style.LineWidth));
+            }
         }
     }
 
@@ -126,6 +138,78 @@ public sealed class GeometryDisplayConduit : DisplayConduit
 
         _brepMeshCache[fullCacheKey] = meshes;
         return meshes;
+    }
+
+    private Mesh GetCachedShadedMesh(string cacheKey, Mesh mesh, double sharpEdgeAngleDegrees)
+    {
+        var fullCacheKey = cacheKey + ":shaded:" + sharpEdgeAngleDegrees;
+        if (_shadedMeshCache.TryGetValue(fullCacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        var shadedMesh = mesh.DuplicateMesh();
+        try
+        {
+            shadedMesh.Unweld(RhinoMath.ToRadians(sharpEdgeAngleDegrees), true);
+            shadedMesh.RebuildNormals();
+            shadedMesh.Compact();
+        }
+        catch
+        {
+            shadedMesh = mesh;
+        }
+
+        _shadedMeshCache[fullCacheKey] = shadedMesh;
+        return shadedMesh;
+    }
+
+    private List<Line> GetCachedSharpEdges(string cacheKey, Mesh mesh, double sharpEdgeAngleDegrees, bool includeNakedEdges)
+    {
+        var fullCacheKey = cacheKey + ":edges:" + sharpEdgeAngleDegrees + ":" + includeNakedEdges;
+        if (_sharpEdgeCache.TryGetValue(fullCacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        if (mesh.FaceNormals.Count != mesh.Faces.Count)
+        {
+            mesh.FaceNormals.ComputeFaceNormals();
+        }
+
+        var lines = new List<Line>();
+        var edges = mesh.TopologyEdges;
+        for (var edgeIndex = 0; edgeIndex < edges.Count; edgeIndex += 1)
+        {
+            var connectedFaces = edges.GetConnectedFaces(edgeIndex);
+            if (connectedFaces == null || connectedFaces.Length == 0)
+            {
+                continue;
+            }
+
+            var shouldDraw = false;
+            if (connectedFaces.Length <= 1)
+            {
+                shouldDraw = includeNakedEdges;
+            }
+            else
+            {
+                var normalA = mesh.FaceNormals[connectedFaces[0]];
+                var normalB = mesh.FaceNormals[connectedFaces[1]];
+                double dot = (normalA.X * normalB.X) + (normalA.Y * normalB.Y) + (normalA.Z * normalB.Z);
+                dot = Math.Max(-1.0, Math.Min(1.0, dot));
+                var angleDegrees = RhinoMath.ToDegrees(Math.Acos(dot));
+                shouldDraw = angleDegrees >= sharpEdgeAngleDegrees;
+            }
+
+            if (shouldDraw)
+            {
+                lines.Add(edges.EdgeLine(edgeIndex));
+            }
+        }
+
+        _sharpEdgeCache[fullCacheKey] = lines;
+        return lines;
     }
 
     private static BoundingBox InflateBoundingBox(BoundingBox boundingBox)

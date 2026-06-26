@@ -14,8 +14,9 @@ public sealed class DisplayObjectStyle
 
     public Color Color { get; set; } = Color.FromArgb(255, 255, 0, 0);
     public int LineWidth { get; set; } = 1;
+    public int PointSize { get; set; } = 4;
     public MeshDisplayMode MeshDisplay { get; set; } = MeshDisplayMode.Shaded;
-    public bool ShowEdges { get; set; } = true;
+    public bool ShowEdges { get; set; } = false;
     public double SharpEdgeAngleDegrees { get; set; } = 30.0;
     public bool IncludeNakedEdges { get; set; } = true;
     public bool UseVertexColors { get; set; }
@@ -42,6 +43,7 @@ public sealed class DisplayObjectStyle
         {
             Color = Color,
             LineWidth = LineWidth,
+            PointSize = PointSize,
             MeshDisplay = MeshDisplay,
             ShowEdges = ShowEdges,
             SharpEdgeAngleDegrees = SharpEdgeAngleDegrees,

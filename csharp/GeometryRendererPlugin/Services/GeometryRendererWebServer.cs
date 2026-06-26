@@ -152,12 +152,12 @@ public sealed class GeometryRendererWebServer : IDisposable
                 var groupId = GetString(root, "group_id") ?? GetString(root, "groupId");
                 var type = GetString(root, "geometry_type") ?? GetString(root, "geometryType") ?? GetString(root, "type");
                 var visible = GetBool(root, "visible") ?? true;
-                var style = ParseStyle(TryGetProperty(root, "style"));
                 var geometryElement = TryGetProperty(root, "geometry") ?? root;
                 var geometry = DecodeGeometry(geometryElement, type);
+                var style = ParseSettingsForGeometry(root, geometry);
                 Log(
                     $"Geometry upsert object_id={objectId} group_id={groupId ?? "default"} visible={visible} " +
-                    $"type_hint={type ?? "(none)"} {DescribeGeometry(geometry)} " +
+                    $"type_hint={type ?? "(none)"} settings={SettingsKeyForGeometry(geometry)} {DescribeGeometry(geometry)} " +
                     $"style={DescribeStyle(style)}");
                 var record = registry.Upsert(objectId, geometry, style, groupId, visible);
                 var snapshot = registry.Snapshot();
@@ -280,7 +280,7 @@ public sealed class GeometryRendererWebServer : IDisposable
     private static string DescribeStyle(DisplayObjectStyle style)
     {
         return $"color=rgba({style.Color.R},{style.Color.G},{style.Color.B},{style.Color.A}) " +
-               $"line_width={style.LineWidth} mesh_display={style.MeshDisplay} " +
+               $"line_width={style.LineWidth} point_size={style.PointSize} mesh_display={style.MeshDisplay} " +
                $"show_edges={style.ShowEdges} naked_edges={style.IncludeNakedEdges} " +
                $"vertex_colors={style.UseVertexColors}";
     }
@@ -411,26 +411,84 @@ public sealed class GeometryRendererWebServer : IDisposable
         return new PolylineCurve(polyline);
     }
 
-    private static DisplayObjectStyle ParseStyle(JsonElement? styleElement)
+    private static DisplayObjectStyle ParseSettingsForGeometry(JsonElement root, object geometry)
     {
-        var style = DisplayObjectStyle.Default;
-        if (styleElement == null || styleElement.Value.ValueKind != JsonValueKind.Object)
+        var settingsKey = SettingsKeyForGeometry(geometry);
+        var settingsElement = TryGetProperty(root, settingsKey);
+        if (settingsElement == null || settingsElement.Value.ValueKind != JsonValueKind.Object)
         {
-            return style;
+            throw new InvalidOperationException($"{GeometryKindForSettings(geometry)} geometry requires object '{settingsKey}'");
         }
 
-        var element = styleElement.Value;
-        var opacity = Clamp(GetDouble(element, "opacity") ?? 1.0, 0.0, 1.0);
-        var color = ParseColor(TryGetProperty(element, "color"), opacity);
-        style.Color = color;
-        style.LineWidth = Math.Max(1, (int)Math.Round(GetDouble(element, "line_width") ?? GetDouble(element, "lineWidth") ?? 1.0));
+        return ParseSettings(root, settingsElement.Value, settingsKey);
+    }
 
-        var display = (GetString(element, "display") ?? GetString(element, "mesh_display") ?? GetString(element, "meshDisplay") ?? "shaded").ToLowerInvariant();
-        style.MeshDisplay = display == "wireframe" ? MeshDisplayMode.Wireframe : MeshDisplayMode.Shaded;
-        style.ShowEdges = GetBool(element, "show_edges") ?? GetBool(element, "showEdges") ?? true;
-        style.IncludeNakedEdges = GetBool(element, "include_naked_edges") ?? GetBool(element, "includeNakedEdges") ?? true;
-        style.UseVertexColors = GetBool(element, "use_vertex_colors") ?? GetBool(element, "useVertexColors") ?? false;
-        style.SharpEdgeAngleDegrees = Clamp(GetDouble(element, "sharp_edge_angle_degrees") ?? GetDouble(element, "sharpEdgeAngleDegrees") ?? 30.0, 0.0, 180.0);
+    private static string SettingsKeyForGeometry(object geometry)
+    {
+        return geometry switch
+        {
+            Mesh => "mesh_settings",
+            Brep => "mesh_settings",
+            Curve => "curve_settings",
+            Rhino.Geometry.Point => "point_settings",
+            Point3d => "point_settings",
+            _ => throw new InvalidOperationException("Unsupported geometry settings type: " + geometry.GetType().Name),
+        };
+    }
+
+    private static string GeometryKindForSettings(object geometry)
+    {
+        return geometry switch
+        {
+            Mesh => "mesh",
+            Brep => "brep",
+            Curve => "curve",
+            Rhino.Geometry.Point => "point",
+            Point3d => "point",
+            _ => geometry.GetType().Name,
+        };
+    }
+
+    private static DisplayObjectStyle ParseSettings(JsonElement root, JsonElement element, string settingsKey)
+    {
+        var style = DisplayObjectStyle.Default;
+        var opacity = 1.0;
+        if (settingsKey == "mesh_settings")
+        {
+            opacity = Clamp(GetDouble(element, "opacity") ?? 1.0, 0.0, 1.0);
+        }
+        else if (TryGetProperty(element, "opacity") != null)
+        {
+            throw new InvalidOperationException("opacity is only supported in mesh_settings");
+        }
+
+        style.Color = ParseColor(TryGetProperty(root, "color"), opacity);
+
+        switch (settingsKey)
+        {
+            case "mesh_settings":
+            {
+                style.LineWidth = Math.Max(1, (int)Math.Round(GetDouble(element, "edge_width") ?? 1.0));
+                var display = (GetString(element, "display") ?? "shaded").ToLowerInvariant();
+                style.MeshDisplay = display == "wireframe" ? MeshDisplayMode.Wireframe : MeshDisplayMode.Shaded;
+                style.ShowEdges = GetBool(element, "show_edges") ?? false;
+                style.IncludeNakedEdges = GetBool(element, "include_naked_edges") ?? true;
+                style.UseVertexColors = GetBool(element, "use_vertex_colors") ?? false;
+                style.SharpEdgeAngleDegrees = Clamp(GetDouble(element, "sharp_edge_angle_degrees") ?? 30.0, 0.0, 180.0);
+                break;
+            }
+            case "curve_settings":
+                style.LineWidth = Math.Max(1, (int)Math.Round(GetDouble(element, "line_width") ?? 1.0));
+                style.ShowEdges = false;
+                break;
+            case "point_settings":
+                style.PointSize = Math.Max(1, (int)Math.Round(GetDouble(element, "point_size") ?? 4.0));
+                style.ShowEdges = false;
+                break;
+            default:
+                throw new InvalidOperationException("Unsupported settings key: " + settingsKey);
+        }
+
         return style;
     }
 

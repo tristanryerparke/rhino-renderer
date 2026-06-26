@@ -11,11 +11,20 @@ import math
 import struct
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import rhino3dm
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 from geometry_renderer_client import GeometryRendererClient  # noqa: E402
+
+
+def mesh_vertex_count(mesh: rhino3dm.Mesh) -> int:
+    return len(cast(Any, mesh.Vertices))
+
+
+def mesh_face_count(mesh: rhino3dm.Mesh) -> int:
+    return int(cast(Any, mesh.Faces).Count)
 
 
 def load_stl_mesh(path: Path) -> rhino3dm.Mesh:
@@ -36,10 +45,10 @@ def load_binary_stl_mesh(data: bytes, triangle_count: int) -> rhino3dm.Mesh:
         # normal: 3 floats, vertices: 9 floats, attribute byte count: uint16
         values = struct.unpack_from("<12fH", data, offset)
         vertex_values = values[3:12]
-        first_index = len(mesh.Vertices)
+        face_indices: list[int] = []
         for index in range(0, 9, 3):
-            mesh.Vertices.Add(*vertex_values[index : index + 3])
-        mesh.Faces.AddFace(first_index, first_index + 1, first_index + 2)
+            face_indices.append(mesh.Vertices.Add(*vertex_values[index : index + 3]))
+        mesh.Faces.AddFace(face_indices[0], face_indices[1], face_indices[2])
         offset += 50
 
     mesh.Normals.ComputeNormals()
@@ -54,13 +63,11 @@ def load_ascii_stl_mesh(text: str) -> rhino3dm.Mesh:
         if len(parts) == 4 and parts[0].lower() == "vertex":
             triangle_vertices.append((float(parts[1]), float(parts[2]), float(parts[3])))
             if len(triangle_vertices) == 3:
-                first_index = len(mesh.Vertices)
-                for vertex in triangle_vertices:
-                    mesh.Vertices.Add(*vertex)
-                mesh.Faces.AddFace(first_index, first_index + 1, first_index + 2)
+                face_indices = [mesh.Vertices.Add(*vertex) for vertex in triangle_vertices]
+                mesh.Faces.AddFace(face_indices[0], face_indices[1], face_indices[2])
                 triangle_vertices.clear()
 
-    if len(mesh.Faces) == 0:
+    if mesh_face_count(mesh) == 0:
         raise ValueError("No triangles found in STL file")
 
     mesh.Normals.ComputeNormals()
@@ -73,7 +80,13 @@ def make_spiral_curve() -> rhino3dm.PolylineCurve:
         t = index / 8.0
         radius = 0.35 * index
         points.append(rhino3dm.Point3d(math.cos(t) * radius, math.sin(t) * radius, 12 + index * 0.1))
-    return rhino3dm.PolylineCurve(rhino3dm.Polyline(points))
+    polyline = rhino3dm.Polyline(len(points))
+    for point in points:
+        polyline.Add(point.X, point.Y, point.Z)
+    curve = polyline.ToPolylineCurve()
+    if curve is None:
+        raise ValueError("Could not create spiral polyline curve")
+    return curve
 
 
 def main() -> None:
@@ -82,7 +95,7 @@ def main() -> None:
 
     stl_path = Path(__file__).resolve().parents[1] / "test-mesh.stl"
     test_mesh = load_stl_mesh(stl_path)
-    print(f"loaded {stl_path.name}: {len(test_mesh.Vertices)} vertices, {len(test_mesh.Faces)} faces")
+    print(f"loaded {stl_path.name}: {mesh_vertex_count(test_mesh)} vertices, {mesh_face_count(test_mesh)} faces")
 
     print(
         "mesh:",
@@ -90,11 +103,16 @@ def main() -> None:
             test_mesh,
             object_id="test-mesh",
             group_id="sample",
-            color="#3b82f6",
-            opacity=1,
-            display="shaded",
-            line_width=2,
-            show_edges=True,
+            geometry_type="mesh",
+            color=(18, 130, 240),
+            mesh_settings={
+                "opacity": 1,
+                "display": "shaded",
+                "edge_width": 5,
+                "show_edges": True,
+                "sharp_edge_angle_degrees": 15,
+                "include_naked_edges": False,
+            },
         ),
     )
 
@@ -104,16 +122,13 @@ def main() -> None:
             make_spiral_curve(),
             object_id="sample-spiral",
             group_id="sample",
+            geometry_type="curve",
             color=(255, 128, 0),
-            opacity=1.0,
-            line_width=4,
+            curve_settings={
+                "line_width": 1,
+            },
         ),
     )
-
-    # These messages target previously sent geometry.
-    # client.hide(object_id="test-mesh")
-    # client.show(object_id="test-mesh")
-    # client.clear(group_id="sample")
 
 
 if __name__ == "__main__":
