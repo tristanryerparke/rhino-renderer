@@ -10,7 +10,13 @@ namespace GeometryRendererPlugin.Panels;
 public sealed class GeometryRendererPanel : Panel, IPanel
 {
     private readonly uint _documentSerialNumber;
-    private readonly Label _summaryLabel = new() { Text = "No objects", Wrap = WrapMode.Word };
+    private readonly Label _summaryLabel = new()
+    {
+        Text = "No objects",
+        Wrap = WrapMode.Word,
+        TextAlignment = TextAlignment.Left,
+        VerticalAlignment = VerticalAlignment.Top,
+    };
 
     public GeometryRendererPanel(uint documentSerialNumber)
     {
